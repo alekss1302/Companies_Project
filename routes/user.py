@@ -9,19 +9,10 @@ users_bp = Blueprint('users', __name__)
 # Register new user
 @users_bp.route('/register', methods=['POST'])
 def register_user():
-    """
-    Registers a new user with a hashed password.
-
-    Expects 'email' and 'password' fields in the request JSON.
-
-    Returns:
-        JSON response indicating success or failure of registration.
-    """
     data = request.get_json()
-    
     if not data.get("email") or not data.get("password"):
         return jsonify({"error": "Email and password are required"}), 400
-    
+
     try:
         hashed_password = generate_password_hash(data["password"])
         new_user = {
@@ -30,33 +21,28 @@ def register_user():
             "role": data.get("role", "user")  # Default role is "user"
         }
 
-        # Check for duplicate email
+        # Check for existing email in database
         if mongo.db.users.find_one({"email": new_user["email"]}):
             return jsonify({"error": "Email already in use"}), 409
 
+        # Insert new user
         result = mongo.db.users.insert_one(new_user)
         return jsonify({"message": "User registered successfully", "user_id": str(result.inserted_id)}), 201
     except Exception as e:
         return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
-# Login
+# User login
 @users_bp.route('/login', methods=['POST'])
 def login_user():
-    """
-    Authenticates a user and returns a JWT access token.
-
-    Expects 'email' and 'password' in the request JSON.
-
-    Returns:
-        JSON response with access token if authentication is successful, or an error if not.
-    """
     data = request.get_json()
     
     try:
+        # Find user by email
         user = mongo.db.users.find_one({"email": data["email"]})
 
+        # Validate password
         if user and check_password_hash(user["password"], data["password"]):
-            # Include role in the token
+            # Generate JWT access token
             access_token = create_access_token(identity=str(user["_id"]), additional_claims={"role": user.get("role")})
             return jsonify({"access_token": access_token}), 200
 
@@ -68,13 +54,8 @@ def login_user():
 @users_bp.route('/profile', methods=['GET'])
 @jwt_required()
 def get_profile():
-    """
-    Retrieves the profile of the currently authenticated user.
-
-    Returns:
-        JSON response with user profile details, or an error if user not found.
-    """
     try:
+        # Retrieve current user's profile excluding password
         current_user_id = get_jwt_identity()
         user = mongo.db.users.find_one({"_id": ObjectId(current_user_id)}, {"password": 0})
 
